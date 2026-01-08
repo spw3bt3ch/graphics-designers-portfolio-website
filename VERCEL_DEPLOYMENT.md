@@ -88,7 +88,12 @@ This Flask application is configured for deployment on Vercel.
 
 - **Module not found**: Add missing packages to `requirements.txt`
 - **Template not found**: Ensure `templates/` directory is in the root
-- **Static files not loading**: Check that files are in `static/` directory
+- **Static files not loading**: 
+  - Ensure files are in `static/` directory
+  - Check that filenames match exactly (case-sensitive)
+  - The Flask app includes a static file route handler for Vercel
+  - If images still don't load, check browser console for 404 errors
+  - Ensure all image files are committed to your repository
 
 ## Post-Deployment
 
