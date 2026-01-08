@@ -14,62 +14,60 @@ def index():
     return render_template('index.html')
 
 # Serve static files explicitly for Vercel
+# This route handles static files with proper URL encoding for filenames with spaces
 @app.route('/static/<path:filename>')
 def serve_static(filename):
     try:
         # Decode URL-encoded filename (handles spaces and special characters like %20)
         decoded_filename = unquote(filename)
         
-        # Try multiple approaches to find the file
-        # First, try with decoded filename
-        file_path = os.path.join(STATIC_DIR, decoded_filename)
-        file_path = os.path.normpath(file_path)
-        
-        # Ensure the file is within the static directory
-        static_dir_norm = os.path.normpath(STATIC_DIR)
-        if not file_path.startswith(static_dir_norm):
-            abort(404)
-        
-        # If file doesn't exist with decoded name, try with original encoded name
-        if not os.path.exists(file_path) or not os.path.isfile(file_path):
-            # Try with original filename
-            alt_path = os.path.join(STATIC_DIR, filename)
-            alt_path = os.path.normpath(alt_path)
-            if alt_path.startswith(static_dir_norm) and (os.path.exists(alt_path) and os.path.isfile(alt_path)):
-                file_path = alt_path
-                decoded_filename = filename
-            else:
-                # List available files for debugging (remove in production)
-                if os.path.exists(STATIC_DIR):
-                    available_files = os.listdir(STATIC_DIR)
-                    print(f"Looking for: {decoded_filename}")
-                    print(f"Available files: {available_files}")
+        # Use Flask's send_from_directory which handles path security and content types automatically
+        try:
+            response = send_from_directory(
+                STATIC_DIR,
+                decoded_filename,
+                mimetype=None,
+                as_attachment=False
+            )
+            # Add cache headers
+            response.headers['Cache-Control'] = 'public, max-age=31536000'
+            return response
+        except (FileNotFoundError, OSError, Exception) as e:
+            # If send_from_directory fails, try alternative filename matching
+            # This handles case sensitivity and exact filename matching issues
+            if os.path.exists(STATIC_DIR):
+                available_files = os.listdir(STATIC_DIR)
+                
+                # Try case-insensitive matching
+                for avail_file in available_files:
+                    if avail_file.lower() == decoded_filename.lower() or \
+                       avail_file.lower() == filename.lower() or \
+                       avail_file == decoded_filename or \
+                       avail_file == filename:
+                        try:
+                            response = send_from_directory(
+                                STATIC_DIR,
+                                avail_file,
+                                mimetype=None,
+                                as_attachment=False
+                            )
+                            response.headers['Cache-Control'] = 'public, max-age=31536000'
+                            return response
+                        except Exception as inner_e:
+                            print(f"Error serving matched file '{avail_file}': {str(inner_e)}")
+                            continue
+                
+                # If still not found, log for debugging
+                print(f"Static file not found. Looking for: '{decoded_filename}' or '{filename}'")
+                print(f"Available files in static directory: {available_files}")
                 abort(404)
-        
-        # Determine content type
-        content_type = 'application/octet-stream'
-        if decoded_filename.lower().endswith(('.jpg', '.jpeg')):
-            content_type = 'image/jpeg'
-        elif decoded_filename.lower().endswith('.png'):
-            content_type = 'image/png'
-        elif decoded_filename.lower().endswith('.gif'):
-            content_type = 'image/gif'
-        elif decoded_filename.lower().endswith('.webp'):
-            content_type = 'image/webp'
-        
-        # Read and send the file
-        with open(file_path, 'rb') as f:
-            file_data = f.read()
-        
-        return Response(
-            file_data,
-            mimetype=content_type,
-            headers={
-                'Cache-Control': 'public, max-age=31536000'
-            }
-        )
+            else:
+                print(f"Static directory does not exist: {STATIC_DIR}")
+                abort(404)
     except Exception as e:
-        print(f"Error serving static file: {str(e)}")
+        print(f"Error serving static file '{filename}': {str(e)}")
+        import traceback
+        traceback.print_exc()
         abort(404)
 
 if __name__ == '__main__':
